@@ -7,7 +7,7 @@ use std::io::LineWriter;
 use miller_rabin::is_prime;
 use num::integer::gcd;
 use std::thread;
-
+use num::bigint::BigInt;
 extern crate num;
 extern crate crossbeam_channel;
 
@@ -36,7 +36,7 @@ Third arg is the number of threads, 4 by default.");
 	// Read Input
 	thread::spawn(move || {
 		let raw_input = fs::read_to_string(file_input_name).expect("Error reading file");
-		let input: Vec<i32> = raw_input.trim().split("\r\n").map(|x| x.parse().expect("Error parsing input")).collect();
+		let input: Vec<BigInt> = raw_input.trim().split("\r\n").map(|x| x.parse::<BigInt>().expect("Error parsing input")).collect();
 		for number in input {
 			sender_input.send(number).expect("Error sending to factorize from input");
 		}
@@ -48,7 +48,7 @@ Third arg is the number of threads, 4 by default.");
 		let sender_factorize_clone = sender_factorize.clone();
 		thread::spawn(move || {
 			while let Ok(val) = receiver_factorize_clone.recv() {
-				let factors:Vec<i32> = factorize(val);
+				let factors:Vec<BigInt> = factorize(val);
 				sender_factorize_clone.send(factors).expect("Error sending to output from factorize");
 			}
 		});
@@ -72,16 +72,16 @@ Third arg is the number of threads, 4 by default.");
 }
 
 
-fn factorize( number : i32) -> Vec<i32> {
+fn factorize( number : BigInt) -> Vec<BigInt> {
 
-	let mut vec : Vec<i32> = vec![number,0];
+	let mut vec : Vec<BigInt> = vec![number.clone(),BigInt::from(0)];
 	
-	if number >= 2 && !test_prime(&number) {
-		let mut prime_factors : Vec<i32> = vec![];
-		let mut tuple = (number,1);
+	if number >= BigInt::from(2) && !test_prime(number.clone()) {
+		let mut prime_factors : Vec<BigInt> = vec![];
+		let mut tuple = (number,BigInt::from(1));
 		
-		while !test_prime(&tuple.0) {
-			tuple = get_factor(tuple.0,1); 
+		while !test_prime(tuple.0.clone()) {
+			tuple = get_factor(tuple.0,BigInt::from(1)); 
 			prime_factors.push(tuple.1);
 		}
 		prime_factors.push(tuple.0);
@@ -91,59 +91,59 @@ fn factorize( number : i32) -> Vec<i32> {
 		prime_factors.sort();
 		
 		//add no duplicate
-		vec[1]+=1;
-		vec.push(prime_factors[0]);
+		vec[1]+= &BigInt::from(1);
+		vec.push(prime_factors[0].clone());
 		for i in 1..prime_factors.len() {
 			if prime_factors[i] != prime_factors[i-1] {
-				vec[1]+=1;
-				vec.push(prime_factors[i]);
+				vec[1]+=&BigInt::from(1);
+				vec.push(prime_factors[i].clone());
 			}
 		}
 	} else {
-		vec[1]+=1;
+		vec[1]+= &BigInt::from(1);
 		vec.push(number);
 	}
 	vec
 }
 
-fn get_factor(number : i32, c:i32) -> (i32,i32) {
-	if number % 2 == 0 {
-		(number/2,2)
+fn get_factor(number : BigInt, c:BigInt) -> (BigInt,BigInt) {
+	if number.clone() % 2 == BigInt::from(0) {
+		(number.clone()/2,BigInt::from(2))
 	} else {
-		let mut a = 2;
-		let mut b = 2;
-		let mut d = 1;
+		let mut a = BigInt::from(2);
+		let mut b = BigInt::from(2);
+		let mut d = BigInt::from(1);
 		
-		while d == 1 {
-			a = pollard_rho_f(a, number, c);
+		while d == BigInt::from(1) {
+			a = pollard_rho_f(a.clone(), number.clone(), c.clone());
 			
-			b = pollard_rho_f(b, number, c);
-			b = pollard_rho_f(b, number, c);
+			b = pollard_rho_f(b.clone(), number.clone(), c.clone());
+			b = pollard_rho_f(b.clone(), number.clone(), c.clone());
 			
-			d = gcd(a-b,number);
+			d = gcd(a.clone()-b.clone(),number.clone());
 		}
 		if d == number {
 			
-			get_factor(number,c+1)
+			get_factor(number.clone(),c.clone() + &BigInt::from(1))
 		} else {
-			(number/d,d)
+			(number/d.clone(),d)
 		}
 	}
 	
 }
 
-fn pollard_rho_f(x: i32, number: i32, c: i32) -> i32 {
-	(x*x + c) % number
+fn pollard_rho_f(x: BigInt, number: BigInt, c: BigInt) -> BigInt {
+	(x.clone()*&x + &c) % &number
 }
 
 
-fn test_prime(x: &i32) -> bool {
-	if *x == 2 {
+fn test_prime(x: BigInt) -> bool {
+	if x == BigInt::from(2) {
 		true
-	} else if *x % 2 == 0 {
+	} else if x.clone() % 2 == BigInt::from(0) {
 		false
 	} else {
-		is_prime(x, 100)
+		is_prime(&x, 100)
 	}
 }
 
