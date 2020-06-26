@@ -3,10 +3,15 @@ use std::fs;
 use std::io::prelude::*;
 use std::env;
 use std::process;
-use std::process::exit;
 use std::io::LineWriter;
 use miller_rabin::is_prime;
+use num::integer::gcd;
+use std::thread;
 
+extern crate num;
+extern crate crossbeam_channel;
+
+use crossbeam_channel::unbounded;
 
 
 fn main() {
@@ -16,30 +21,56 @@ fn main() {
 		println!("Not enough args, you atleast need to put input and output file names");
 		process::exit(1);
 	}
-	let file_input_name = &args[1];
-    let file_output_name = &args[2];
+	let file_input_name = &args[1].to_string().clone();
+    let file_output_name = &args[2].to_string().clone();
  
-	//let mut file = File::create(file_output_name).unwrap();
-	//file.write_all(b"5 \n10")?;
 	
-	let x = 8;
-	println!("test : {}",test_prime(&x));
-	println!("Test succeed");
+	let (s0, r0) = unbounded();
+	let (sn,rn) = unbounded();
+
+	let nbt = 1;
+
 	
+	// Read Input
 	let raw_input = fs::read_to_string(file_input_name).expect("Error reading file");
-	let input: Vec<i32> = raw_input.trim().split("\r\n").map(|x| x.parse().unwrap()).collect();
+	thread::spawn(move || {
+		let input: Vec<i32> = raw_input.trim().split("\r\n").map(|x| x.parse().unwrap()).collect();
+		for number in input {
+			println!("send input : {}",number);
+			s0.send(number).expect("Error sending to factorize from input");
+		}
+    });
 	
-	let file  = File::create(file_output_name).unwrap();
-	let file = LineWriter::new(file);
-	
-	let mut factorised : Vec<Vec<i32> > = vec![];
-	for number in input {
-		factorised.push(factorize(number));
+	// factorize 
+	for _i in 0..nbt {
+		let r1 = r0.clone();
+		let s2 = sn.clone();
+		thread::spawn(move || {
+			while let Ok(val) = r1.recv() {
+				println!("received factorize : {}",val);
+				let vec:Vec<i32> = factorize(val);
+				s2.send(vec).expect("Error sending to output from factorize");
+			}
+		});
+		
 	}
-	output(factorised, file).unwrap();
 	
-	
+	// output 
+	let file  = File::create(file_output_name).unwrap();
+	let mut file = LineWriter::new(file);
+	let thread = thread::spawn(move || {
+		while let Ok(subvec) = rn.recv() {
+			for i in 0..subvec.len() {
+				let string = if i > 0 {" ".to_string() + &subvec[i].to_string()} else {subvec[i].to_string()};
+				file.write_all(string.as_bytes()).unwrap();
+			}
+			file.write_all(b"\r\n").unwrap();
+		}
+	});
+	thread.join().expect("Error joining output thread");
+
 }
+
 
 fn factorize( number : i32) -> Vec<i32> {
 
@@ -92,6 +123,7 @@ fn get_factor(number : i32, c:i32) -> (i32,i32) {
 			d = gcd(a-b,number);
 		}
 		if d == number {
+			
 			get_factor(number,c+1)
 		} else {
 			(number/d,d)
@@ -104,21 +136,6 @@ fn pollard_rho_f(x: i32, number: i32, c: i32) -> i32 {
 	(x*x + c) % number
 }
 
-fn gcd(mut a:i32,mut b: i32) -> i32 {
-	if a < 1 || b < 1 {
-		1
-	} else {
-
-	let mut r = 0;
-	
-	while b != 0 {
-		r = a % b;
-		a = b;
-		b = r;
-	}
-	a
-	}
-}
 
 fn test_prime(x: &i32) -> bool {
 	if *x == 2 {
@@ -131,13 +148,4 @@ fn test_prime(x: &i32) -> bool {
 }
 
 
-fn output(vec : Vec<Vec<i32> >, mut file : LineWriter<File>) -> std::io::Result<()> {
-	for subvec in vec {
-		for i in 0..subvec.len() {
-			let string = if i > 0 {" ".to_string() + &subvec[i].to_string()} else {subvec[i].to_string()};
-			file.write_all(string.as_bytes())?;
-		}
-		file.write_all(b"\r\n")?;
-	}
-	Ok(())
-}
+
