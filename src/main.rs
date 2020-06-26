@@ -17,54 +17,54 @@ use crossbeam_channel::unbounded;
 fn main() {
 	let args: Vec<String> = env::args().collect();
 	
-	if args.len() < 2 {
-		println!("Not enough args, you atleast need to put input and output file names");
+	if args.len() > 4 {
+		let message = String::from("Too many args.
+First arg is the input file name, 'input.txt' by default.
+Second arg is the output file name, 'output.txt by default.
+Third arg is the number of threads, 4 by default.");
+		println!("{}",message);
 		process::exit(1);
 	}
-	let file_input_name = &args[1].to_string().clone();
-    let file_output_name = &args[2].to_string().clone();
- 
+	let file_input_name = if args.len() >= 2 {args[1].to_owned()} else {String::from("input.txt")};
+    let file_output_name = if args.len() >= 3 {args[2].to_owned()} else {String::from("output.txt")};
+	let nb_threads = if args.len() >= 4 {args[3].to_owned().parse().expect("Error parsing third arg, number of threads")} else {1};
 	
-	let (s0, r0) = unbounded();
-	let (sn,rn) = unbounded();
+	let (sender_input, receiver_factorize) = unbounded();
+	let (sender_factorize,receiver_output) = unbounded();
 
-	let nbt = 1;
 
-	
 	// Read Input
-	let raw_input = fs::read_to_string(file_input_name).expect("Error reading file");
 	thread::spawn(move || {
-		let input: Vec<i32> = raw_input.trim().split("\r\n").map(|x| x.parse().unwrap()).collect();
+		let raw_input = fs::read_to_string(file_input_name).expect("Error reading file");
+		let input: Vec<i32> = raw_input.trim().split("\r\n").map(|x| x.parse().expect("Error parsing input")).collect();
 		for number in input {
-			println!("send input : {}",number);
-			s0.send(number).expect("Error sending to factorize from input");
+			sender_input.send(number).expect("Error sending to factorize from input");
 		}
     });
 	
 	// factorize 
-	for _i in 0..nbt {
-		let r1 = r0.clone();
-		let s2 = sn.clone();
+	for _i in 0..nb_threads {
+		let receiver_factorize_clone = receiver_factorize.clone();
+		let sender_factorize_clone = sender_factorize.clone();
 		thread::spawn(move || {
-			while let Ok(val) = r1.recv() {
-				println!("received factorize : {}",val);
-				let vec:Vec<i32> = factorize(val);
-				s2.send(vec).expect("Error sending to output from factorize");
+			while let Ok(val) = receiver_factorize_clone.recv() {
+				let factors:Vec<i32> = factorize(val);
+				sender_factorize_clone.send(factors).expect("Error sending to output from factorize");
 			}
 		});
-		
 	}
+	drop(sender_factorize); // Drop original sender so output thread can end peacefully
 	
 	// output 
-	let file  = File::create(file_output_name).unwrap();
-	let mut file = LineWriter::new(file);
 	let thread = thread::spawn(move || {
-		while let Ok(subvec) = rn.recv() {
-			for i in 0..subvec.len() {
-				let string = if i > 0 {" ".to_string() + &subvec[i].to_string()} else {subvec[i].to_string()};
-				file.write_all(string.as_bytes()).unwrap();
+		let file  = File::create(file_output_name).expect("Error creating output file");
+		let mut file = LineWriter::new(file);
+		while let Ok(factors) = receiver_output.recv() {
+			for i in 0..factors.len() {
+				let string = if i > 0 {" ".to_string() + &factors[i].to_string()} else {factors[i].to_string()};
+				file.write_all(string.as_bytes()).expect("Error writing factors in output file.");
 			}
-			file.write_all(b"\r\n").unwrap();
+			file.write_all(b"\r\n").expect("Error writing new line in output file.");
 		}
 	});
 	thread.join().expect("Error joining output thread");
